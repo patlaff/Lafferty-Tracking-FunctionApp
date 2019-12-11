@@ -77,6 +77,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         timestamp_utc = pytz.timezone('UTC').localize(timestamp)
         datediff = abs(today_utc - timestamp_utc)
         datediff_hours = int(divmod(abs(today_utc - timestamp_utc).total_seconds(), 3600)[0])
+        datediff_hours_rem = datediff_hours - (datediff.days*24)
 
         timestamp_est = timestamp_utc.astimezone(tz_est)
         timestamp_est_f = timestamp_est.strftime("%m/%d/%Y %I:%M %p")
@@ -84,7 +85,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if datediff.days == 0:
             response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff_hours} hours ago."
         else:
-            response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff.days} days and {datediff_hours} hours ago."
+            response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff.days} days and {datediff_hours_rem} hours ago."
         return func.HttpResponse(
             response,
             status_code=200
