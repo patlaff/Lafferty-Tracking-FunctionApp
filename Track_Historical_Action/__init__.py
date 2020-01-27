@@ -120,3 +120,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             f"{amount} {amount_unit} of {action} successfully logged at {timestamp_est_f}",
             status_code=200
         )
+
+    try:
+        connection.close()
+    except Exception as e:
+        print(f"Error closing db connection: {e}")

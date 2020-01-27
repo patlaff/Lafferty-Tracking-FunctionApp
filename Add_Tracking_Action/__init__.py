@@ -110,3 +110,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             f"{action} already exists in DB."
         )
+
+    try:
+        connection.close()
+    except Exception as e:
+        print(f"Error closing db connection: {e}")

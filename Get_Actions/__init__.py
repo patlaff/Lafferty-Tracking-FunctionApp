@@ -54,3 +54,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             str(actions), 
             status_code=200
         )
+    
+    try:
+        connection.close()
+    except Exception as e:
+        print(f"Error closing db connection: {e}")
