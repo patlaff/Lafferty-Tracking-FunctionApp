@@ -24,7 +24,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     if not action:
         return func.HttpResponse(
-            "Please pass an [action] name and [unit] value on the query string or in the request body",
+            "Please pass an [action] name on the query string or in the request body",
             status_code=400
         )
         sys.exit()
