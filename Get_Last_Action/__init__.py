@@ -4,8 +4,9 @@ import os
 import sys
 import json
 import pytz
-import pyodbc
 import logging
+import urllib
+import sqlalchemy as db
 import azure.functions as func
 from datetime import datetime
 
@@ -29,51 +30,52 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         sys.exit()
 
+    # Define Timezone
+    tz_est = pytz.timezone('US/Eastern')
+    today_utc = datetime.now(pytz.timezone('UTC'))
+
     # Connect to SQL DB
     try:
-        sqlConnStr = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server}; SERVER='+os.environ['db_server']+'; DATABASE='+os.environ['db']+'; UID='+os.environ['db_username']+'; PWD='+os.environ['db_password'])
-        cursor = sqlConnStr.cursor()
+        params = urllib.parse.quote_plus('DRIVER={ODBC Driver 17 for SQL Server}; SERVER='+os.environ['db_server']+'; DATABASE='+os.environ['db']+'; UID='+os.environ['db_username']+'; PWD='+os.environ['db_password'])
+        engine = db.create_engine("mssql+pyodbc:///?odbc_connect=%s" % params)
+        connection = engine.connect()
         logging.info("MSSQL Database Connected")
     except Exception as e:
         return func.HttpResponse(
-            f"Error in sql database connection : {e}", 
+            f"Error establishing sql database connection : {e}", 
             status_code=400
         )
         sys.exit()
 
+    # Get DB Metadata
+    metadata = db.MetaData()
+
+    # Define Tables
+    last_action_vw = db.Table('last_action_vw', metadata, schema='trk', autoload=True, autoload_with=engine)
+    
     # Query DB for last Action
     try:
-        cursor.execute("""
-        SELECT t.action, t.amount, t.[timestamp], a.amountUnit
-        FROM trk.Tracking t
-        LEFT JOIN trk.Tracking_Actions a
-            ON t.action = a.actionName
-        WHERE t.action = ?
-        AND t.[timestamp] = (SELECT MAX(t.[timestamp]) FROM trk.Tracking t WHERE t.action = ?)
-        """, action, action)
-        lastAction = cursor.fetchone()
+        lastAction_query = db.select([last_action_vw]).where(last_action_vw.columns.action == action)
+        lastAction = connection.execute(lastAction_query).fetchone()
+        lastAction_unit = db.select([last_action_vw.columns.amountUnit]).where(last_action_vw.columns.action == action)
+        amountUnit = connection.execute(lastAction_unit).scalar()
+        lastAction_amount = db.select([last_action_vw.columns.amount]).where(last_action_vw.columns.action == action)
+        amount = connection.execute(lastAction_amount).scalar()
+        lastAction_timestamp = db.select([last_action_vw.columns.max_timestamp]).where(last_action_vw.columns.action == action)
+        timestamp = connection.execute(lastAction_timestamp).scalar()
     except Exception as e:
-        return func.HttpResponse(
-            f"Error Querying DB: {e}",
-            status_code=400
-        ) 
+        print(
+            "Unable to retrieve unit for action record"
+        )
 
     if not lastAction:
-        return func.HttpResponse(
-            f"No instances of the action, {action}, tracked in DB.",
-            status_code=404
+        print(
+            f"No instances of the action, {action}, tracked in DB."
         )
     else:
-        if lastAction.amount % 1 == 0:
-            amount = int(lastAction.amount)
-        else:
-            amount = lastAction.amount
-        amountUnit = lastAction.amountUnit
-        
-        tz_est = pytz.timezone('US/Eastern')
-        today_utc = datetime.now(pytz.timezone('UTC'))
-        
-        timestamp = lastAction.timestamp
+        if amount % 1 == 0:
+            amount = int(amount)
+
         timestamp_utc = pytz.timezone('UTC').localize(timestamp)
         datediff = abs(today_utc - timestamp_utc)
         datediff_hours = int(divmod(abs(today_utc - timestamp_utc).total_seconds(), 3600)[0])
@@ -86,7 +88,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff_hours} hours ago."
         else:
             response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff.days} days and {datediff_hours_rem} hours ago."
-        return func.HttpResponse(
-            response,
-            status_code=200
+        print(
+            response
         )
+        
+    try:
+        connection.close()
+    except Exception as e:
+        print(f"Error closing db connection: {e}")
