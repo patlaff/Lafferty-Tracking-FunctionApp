@@ -5,5 +5,5 @@
   "azureFunctions.projectLanguage": "Python",
   "azureFunctions.projectRuntime": "~2",
   "debug.internalConsoleOptions": "neverOpen",
-  "python.pythonPath": "env\\Scripts\\python.exe"
+  "python.pythonPath": "C:\\Users\\patla\\AppData\\Local\\Programs\\Python\\Python37\\python.exe"
 }
