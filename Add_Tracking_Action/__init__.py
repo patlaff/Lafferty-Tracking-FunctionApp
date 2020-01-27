@@ -15,6 +15,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Parse parameters. Parameters can be passed in either query string or request body
     action = req.params.get('action')
     unit = req.params.get('unit')
+    action_type = req.params.get('type')
     timestamp = datetime.now()
     if not action:
         try:
@@ -31,17 +32,32 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             pass
         else:
             unit = req_body.get('unit')
+    
+    if not action_type:
+        try:
+            req_body = req.get_json()
+        except ValueError:
+            pass
+        else:
+            action_type = req_body.get('type')
 
     if not action:
         return func.HttpResponse(
-            "Please pass an [action] name and [unit] value on the query string or in the request body",
+            "Please pass an [action] name, [unit] value, and action [type] on the query string or in the request body",
             status_code=400
         )
         sys.exit()
     
     if not unit:
         return func.HttpResponse(
-            "Please pass an [action] name and [unit] value on the query string or in the request body",
+            "Please pass an [action] name, [unit] value, and action [type] on the query string or in the request body",
+            status_code=400
+        )
+        sys.exit()
+    
+    if not action_type:
+        return func.HttpResponse(
+            "Please pass an [action] name, [unit] value, and action [type] on the query string or in the request body",
             status_code=400
         )
         sys.exit()
@@ -68,16 +84,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Query DB for all records without a releaseDate
     try:
         action_query = db.select([tbl_Tracking_Actions.columns.actionName.distinct()])
-        actionsList = connection.execute(action_query).fetchall()
+        actions = connection.execute(action_query).fetchall()
     except Exception as e:
         return func.HttpResponse(
             "Unable to retrieve tracked actions.",
             status_code=400
         )
+    actionsList = [r[0] for r in actions]
 
-    if action not in actionsList[0]:
+    if action not in actionsList:
         try:
-            insert_query = db.insert(tbl_Tracking_Actions).values(actionName=action, amountUnit=unit, addedOn=timestamp)
+            insert_query = db.insert(tbl_Tracking_Actions).values(actionName=action, amountUnit=unit, actionType=action_type, addedOn=timestamp)
             insert_result = connection.execute(insert_query)
             return func.HttpResponse(
                 f"New Action, {action}, added to Tracking_Actions table with units, {unit}.",
