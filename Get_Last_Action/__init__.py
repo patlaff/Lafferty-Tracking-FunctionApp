@@ -45,11 +45,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         cursor.execute("""
         SELECT t.action, t.amount, t.[timestamp], a.amountUnit
-        FROM Tracking t
-        LEFT JOIN Tracking_Actions a
+        FROM trk.Tracking t
+        LEFT JOIN trk.Tracking_Actions a
             ON t.action = a.actionName
         WHERE t.action = ?
-        AND t.[timestamp] = (SELECT MAX(t.[timestamp]) FROM Tracking t WHERE t.action = ?)
+        AND t.[timestamp] = (SELECT MAX(t.[timestamp]) FROM trk.Tracking t WHERE t.action = ?)
         """, action, action)
         lastAction = cursor.fetchone()
     except Exception as e:

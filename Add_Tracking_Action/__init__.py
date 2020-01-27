@@ -3,8 +3,9 @@ from __future__ import print_function
 import os
 import sys
 import json
-import pyodbc
 import logging
+import urllib
+import sqlalchemy as db
 import azure.functions as func
 from datetime import datetime
 
@@ -14,6 +15,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     # Parse parameters. Parameters can be passed in either query string or request body
     action = req.params.get('action')
     unit = req.params.get('unit')
+    timestamp = datetime.now()
     if not action:
         try:
             req_body = req.get_json()
@@ -44,10 +46,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         sys.exit()
 
-    # Connect to SQL DB
+    ## Connect to SQL DB
     try:
-        sqlConnStr = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server}; SERVER='+os.environ['db_server']+'; DATABASE='+os.environ['db']+'; UID='+os.environ['db_username']+'; PWD='+os.environ['db_password'])
-        cursor = sqlConnStr.cursor()
+        params = urllib.parse.quote_plus('DRIVER={ODBC Driver 17 for SQL Server}; SERVER='+os.environ['db_server']+'; DATABASE='+os.environ['db']+'; UID='+os.environ['db_username']+'; PWD='+os.environ['db_password'])
+        engine = db.create_engine("mssql+pyodbc:///?odbc_connect=%s" % params)
+        connection = engine.connect()
         logging.info("MSSQL Database Connected")
     except Exception as e:
         return func.HttpResponse(
@@ -56,15 +59,26 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         sys.exit()
 
-    # Query DB for all records without a releaseDate
-    cursor.execute("SELECT DISTINCT actionName FROM dbo.Tracking_Actions")
-    actionsList = cursor.fetchall()
+    # Get DB Metadata
+    metadata = db.MetaData()
 
-    timestamp = datetime.now()
+    # Define Tables
+    tbl_Tracking_Actions = db.Table('Tracking_Actions', metadata, schema='trk', autoload=True, autoload_with=engine)
+
+    # Query DB for all records without a releaseDate
+    try:
+        action_query = db.select([tbl_Tracking_Actions.columns.actionName.distinct()])
+        actionsList = connection.execute(action_query).fetchall()
+    except Exception as e:
+        return func.HttpResponse(
+            "Unable to retrieve tracked actions.",
+            status_code=400
+        )
+
     if action not in actionsList[0]:
         try:
-            cursor.execute("INSERT INTO dbo.Tracking_Actions([actionNAme],[amountUnit],[addedOn]) values (?,?,?)", action, unit, timestamp)
-            sqlConnStr.commit()
+            insert_query = db.insert(tbl_Tracking_Actions).values(actionName=action, amountUnit=unit, addedOn=timestamp)
+            insert_result = connection.execute(insert_query)
             return func.HttpResponse(
                 f"New Action, {action}, added to Tracking_Actions table with units, {unit}.",
                 status_code=200

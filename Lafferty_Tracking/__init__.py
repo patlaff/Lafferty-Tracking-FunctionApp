@@ -4,8 +4,9 @@ import os
 import sys
 import json
 import pytz
-import pyodbc
 import logging
+import urllib
+import sqlalchemy as db
 import azure.functions as func
 from datetime import datetime
 
@@ -45,10 +46,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         sys.exit()
 
+    # Define Timestamp
+    tz_est = pytz.timezone('US/Eastern')
+    timestamp = datetime.now(pytz.timezone('UTC'))
+    timestamp_est = timestamp.astimezone(tz_est)
+    timestamp_est_f = timestamp_est.strftime("%m/%d/%Y %I:%M %p")
+
     # Connect to SQL DB
     try:
-        sqlConnStr = pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server}; SERVER='+os.environ['db_server']+'; DATABASE='+os.environ['db']+'; UID='+os.environ['db_username']+'; PWD='+os.environ['db_password'])
-        cursor = sqlConnStr.cursor()
+        params = urllib.parse.quote_plus('DRIVER={ODBC Driver 17 for SQL Server}; SERVER='+os.environ['db_server']+'; DATABASE='+os.environ['db']+'; UID='+os.environ['db_username']+'; PWD='+os.environ['db_password'])
+        engine = db.create_engine("mssql+pyodbc:///?odbc_connect=%s" % params)
+        connection = engine.connect()
         logging.info("MSSQL Database Connected")
     except Exception as e:
         return func.HttpResponse(
@@ -57,18 +65,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         sys.exit()
 
-    # Query DB for all records without a releaseDate
-    cursor.execute("SELECT DISTINCT actionName FROM dbo.Tracking_Actions")
-    actionsList = cursor.fetchall()
+    # Get DB Metadata
+    metadata = db.MetaData()
 
-    tz_est = pytz.timezone('US/Eastern')
-    timestamp = datetime.now(pytz.timezone('UTC'))
-    timestamp_est = timestamp.astimezone(tz_est)
-    timestamp_est_f = timestamp_est.strftime("%m/%d/%Y %I:%M %p")
-    
+    # Define Tables
+    tbl_Tracking = db.Table('Tracking', metadata, schema='trk', autoload=True, autoload_with=engine)
+    tbl_Tracking_Actions = db.Table('Tracking_Actions', metadata, schema='trk', autoload=True, autoload_with=engine)
+
+    # Insert new action record
     try:
-        cursor.execute("INSERT INTO dbo.Tracking([action],[amount],[timestamp]) values (?,?,?)", action, amount, timestamp)
-        sqlConnStr.commit()
+        insert_query = db.insert(tbl_Tracking).values(action=action, amount=amount, timestamp=timestamp)
+        insert_result = connection.execute(insert_query)
     except Exception as e:
         return func.HttpResponse(
             f"Unable to insert new record : {e}", 
@@ -76,8 +83,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         sys.exit()
 
-    cursor.execute("SELECT amountUnit FROM dbo.Tracking_Actions WHERE actionName = ?", action)
-    amount_unit = cursor.fetchone()
+    # Get unit for action record
+    try:
+        unit_query = db.select([tbl_Tracking_Actions.columns.amountUnit]).where(tbl_Tracking_Actions.columns.actionName == action)
+        amount_unit = connection.execute(unit_query).scalar()
+    except Exception as e:
+        return func.HttpResponse(
+            "Unable to retrieve unit for action record",
+            status_code=400
+        )
+
     if not amount_unit:
         return func.HttpResponse(
             f"{action} was successfully logged, but no relevant [action] found in DB. Please create new [action] record.",
@@ -85,6 +100,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
     else:
         return func.HttpResponse(
-            f"{amount} {amount_unit[0]} of {action} successfully logged at {timestamp_est_f}",
+            f"{amount} {amount_unit} of {action} successfully logged at {timestamp_est_f}",
             status_code=200
         )
