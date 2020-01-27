@@ -51,26 +51,28 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     metadata = db.MetaData()
 
     # Define Tables
-    last_action_vw = db.Table('last_action_vw', metadata, schema='trk', autoload=True, autoload_with=engine)
+    last_actions_vw = db.Table('last_actions_vw', metadata, schema='trk', autoload=True, autoload_with=engine)
     
     # Query DB for last Action
     try:
-        lastAction_query = db.select([last_action_vw]).where(last_action_vw.columns.action == action)
+        lastAction_query = db.select([last_actions_vw]).where(last_actions_vw.columns.action == action)
         lastAction = connection.execute(lastAction_query).fetchone()
-        lastAction_unit = db.select([last_action_vw.columns.amountUnit]).where(last_action_vw.columns.action == action)
+        lastAction_unit = db.select([last_actions_vw.columns.amountUnit]).where(last_actions_vw.columns.action == action)
         amountUnit = connection.execute(lastAction_unit).scalar()
-        lastAction_amount = db.select([last_action_vw.columns.amount]).where(last_action_vw.columns.action == action)
+        lastAction_amount = db.select([last_actions_vw.columns.amount]).where(last_actions_vw.columns.action == action)
         amount = connection.execute(lastAction_amount).scalar()
-        lastAction_timestamp = db.select([last_action_vw.columns.max_timestamp]).where(last_action_vw.columns.action == action)
+        lastAction_timestamp = db.select([last_actions_vw.columns.max_timestamp]).where(last_actions_vw.columns.action == action)
         timestamp = connection.execute(lastAction_timestamp).scalar()
     except Exception as e:
-        print(
-            "Unable to retrieve unit for action record"
+        return func.HttpResponse(
+            "Unable to retrieve unit for action record",
+            status_code=400
         )
 
     if not lastAction:
-        print(
-            f"No instances of the action, {action}, tracked in DB."
+        return func.HttpResponse(
+            f"No instances of the action, {action}, tracked in DB.",
+            status_code=404
         )
     else:
         if amount % 1 == 0:
@@ -88,11 +90,15 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff_hours} hours ago."
         else:
             response = f"{amount} {amountUnit} of {action} was recorded on {timestamp_est_f} EST, {datediff.days} days and {datediff_hours_rem} hours ago."
-        print(
-            response
+        return func.HttpResponse(
+            response,
+            status_code=200
         )
         
     try:
         connection.close()
     except Exception as e:
-        print(f"Error closing db connection: {e}")
+        return func.HttpResponse(
+            f"Error closing db connection: {e}",
+            status_code=202
+        )
