@@ -1,4 +1,3 @@
 azure-functions
-pyodbc
 pytz
 sqlalchemy
